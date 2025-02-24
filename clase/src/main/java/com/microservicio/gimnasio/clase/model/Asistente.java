@@ -14,6 +14,7 @@ import java.util.Date;
 @Entity
 @NoArgsConstructor
 @AllArgsConstructor
+
 public class Asistente {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
