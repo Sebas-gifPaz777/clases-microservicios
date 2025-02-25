@@ -1,9 +1,6 @@
 package com.microservicio.gimnasio.clase.model;
 
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
+import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -14,20 +11,22 @@ import java.util.Date;
 @Entity
 @NoArgsConstructor
 @AllArgsConstructor
-
 public class Asistente {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     private Long miembroId;
-    private Long claseId;
-    private Date fechaInscripción;
+    private Date fechaInscripcion;  // renamed without accent for best practice
 
-    public Asistente(Long miembroId, Long claseId, Date date) {
+    @ManyToOne
+    @JoinColumn(name = "clase_id")
+    private Clase clase;
 
+    public Asistente(Long miembroId, Clase clase, Date fechaInscripcion) {
         this.miembroId = miembroId;
-        this.claseId = claseId;
-        fechaInscripción = date;
+        this.clase = clase;
+        this.fechaInscripcion = fechaInscripcion;
     }
 }
