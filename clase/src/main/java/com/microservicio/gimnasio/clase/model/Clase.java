@@ -32,4 +32,8 @@ public class Clase {
         this.horario = horario;
         this.capacidadMaxima = capacidadMaxima;
     }
+
+    public String getFecha() {
+        return horario.toLocalDate().toString();
+    }
 }

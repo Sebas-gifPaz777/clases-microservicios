@@ -7,6 +7,7 @@ import com.microservicio.gimnasio.clase.model.Miembro;
 import com.microservicio.gimnasio.clase.repository.AsistenteRepository;
 import com.microservicio.gimnasio.clase.repository.ClaseRepository;
 import jakarta.transaction.Transactional;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -27,25 +28,34 @@ public class ClaseService {
     @Autowired
     private WebClient webClient;
 
+    @Autowired
+    private RabbitTemplate rabbitTemplate;
+
     /**
-     * Creates or updates a Clase in the database.
+     * Programa una nueva clase en la base de datos y envía una notificación a RabbitMQ.
      */
     public Clase programarClase(Clase clase) {
-        return claseRepository.save(clase);
+        Clase nuevaClase = claseRepository.save(clase);
+
+        // Enviar notificación a RabbitMQ sobre la nueva clase
+        String mensaje = "Nueva clase programada: " + clase.getNombre() + " el " + clase.getFecha();
+        rabbitTemplate.convertAndSend("clases.intercambio", "", mensaje);
+
+        return nuevaClase;
     }
 
     /**
-     * Associates an entrenador with a Clase by calling
-     * an external service (entrenadores) via WebClient.
+     * Asigna un entrenador a una clase consultando el servicio de entrenadores.
      */
     public Clase agregarEntrenador(Long entrenadorId, Long claseId) {
         Optional<Clase> claseOpt = claseRepository.findById(claseId);
         if (claseOpt.isEmpty()) {
-            return null; // or throw an exception
+            return null; // Retorna null si la clase no existe
         }
 
         Clase clase = claseOpt.get();
-        // Retrieve entrenador data from external service
+
+        // Consultar servicio de entrenadores
         Entrenador entrenador = webClient.get()
                 .uri("http://localhost:8082/entrenadores/{id}", entrenadorId)
                 .retrieve()
@@ -56,7 +66,7 @@ public class ClaseService {
             clase.setEntrenadorId(entrenadorId);
             entrenador.setDisponible(false);
 
-            // Update entrenador availability
+            // Actualizar disponibilidad del entrenador
             webClient.put()
                     .uri("http://localhost:8082/entrenadores/{id}", entrenadorId)
                     .bodyValue(entrenador)
@@ -70,16 +80,14 @@ public class ClaseService {
     }
 
     /**
-     * Returns all scheduled classes.
+     * Retorna todas las clases programadas.
      */
     public List<Clase> obtenerTodasClases() {
         return claseRepository.findAll();
     }
 
     /**
-     * Enrolls a member (miembroId) into a given Clase (claseId).
-     * Checks capacity, calls another service to verify Miembro,
-     * and reduces capacity if successful.
+     * Inscribe un miembro en una clase, reduce la capacidad disponible y envía un evento a RabbitMQ.
      */
     @Transactional
     public Asistente inscribirAsistente(Long claseId, Long miembroId) throws Exception {
@@ -88,15 +96,15 @@ public class ClaseService {
             throw new Exception("La clase con ID " + claseId + " no existe.");
         }
 
-        // Check if member actually exists in the external service
+        // Verificar si el miembro existe en el servicio de miembros
         Miembro miembro = webClient.get()
-                .uri("http://localhost:8083/entrenadores/{miembroId}", miembroId)
+                .uri("http://localhost:8083/miembros/{miembroId}", miembroId)
                 .retrieve()
                 .bodyToMono(Miembro.class)
                 .block();
 
         if (miembro == null || !miembro.getId().equals(miembroId)) {
-            throw new Exception("El miembro con ID " + miembroId + " no existe o no coincide.");
+            throw new Exception("El miembro con ID " + miembroId + " no existe.");
         }
 
         Clase clase = claseOpt.get();
@@ -104,24 +112,30 @@ public class ClaseService {
             throw new Exception("No hay cupos disponibles para la clase " + clase.getNombre());
         }
 
-        // Decrease capacity
+        // Reducir capacidad disponible
         clase.setCapacidadMaxima(clase.getCapacidadMaxima() - 1);
         claseRepository.save(clase);
 
-        // Create and save the new Asistente linked to the Clase
+        // Crear y guardar el nuevo asistente de la clase
         Asistente asistente = new Asistente(miembroId, clase, new Date());
-        return asistenteRepository.save(asistente);
+        Asistente nuevoAsistente = asistenteRepository.save(asistente);
+
+        // Enviar notificación a RabbitMQ sobre la inscripción
+        String mensaje = "El miembro " + miembro.getNombre() + " se inscribió en la clase " + clase.getNombre();
+        rabbitTemplate.convertAndSend("clases.intercambio", "", mensaje);
+
+        return nuevoAsistente;
     }
 
     /**
-     * Example of updating inventory (equipos) via WebClient.
+     * Actualiza el inventario de equipos consultando el servicio de equipos.
      */
     public void escogerInventario(Long cantidad, Long inventarioId) {
         webClient.put()
                 .uri("http://localhost:8081/equipos/{inventarioId}/cantidad", inventarioId)
                 .bodyValue(cantidad)
                 .retrieve()
-                .bodyToMono(Entrenador.class)
+                .bodyToMono(Void.class)
                 .block();
     }
 }
