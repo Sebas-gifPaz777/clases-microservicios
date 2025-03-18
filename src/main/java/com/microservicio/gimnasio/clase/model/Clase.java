@@ -13,7 +13,6 @@ import java.util.List;
 @Entity
 @NoArgsConstructor
 public class Clase {
-
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -70,4 +69,5 @@ public class Clase {
     public void setEntrenadorId(Long entrenadorId) {
         this.entrenadorId = entrenadorId;
     }
+
 }

@@ -1,9 +1,6 @@
 package com.microservicio.gimnasio.clase.service;
 
-import com.microservicio.gimnasio.clase.model.Asistente;
-import com.microservicio.gimnasio.clase.model.Clase;
-import com.microservicio.gimnasio.clase.model.Entrenador;
-import com.microservicio.gimnasio.clase.model.Miembro;
+import com.microservicio.gimnasio.clase.model.*;
 import com.microservicio.gimnasio.clase.repository.AsistenteRepository;
 import com.microservicio.gimnasio.clase.repository.ClaseRepository;
 import jakarta.transaction.Transactional;
@@ -34,6 +31,8 @@ public class ClaseService {
     /**
      * Programa una nueva clase en la base de datos y envía una notificación a RabbitMQ.
      */
+    OcupacionClaseProducer ocupacionClaseProducer;
+  
     public Clase programarClase(Clase clase) {
         Clase nuevaClase = claseRepository.save(clase);
 
@@ -86,23 +85,20 @@ public class ClaseService {
         return claseRepository.findAll();
     }
 
+
     /**
      * Inscribe un miembro en una clase, reduce la capacidad disponible y envía un evento a RabbitMQ.
      */
-    @Transactional
-    public Asistente inscribirAsistente(Long claseId, Long miembroId) throws Exception {
-        Optional<Clase> claseOpt = claseRepository.findById(claseId);
-        if (claseOpt.isEmpty()) {
-            throw new Exception("La clase con ID " + claseId + " no existe.");
-        }
+    public Asistente inscribirAsistente(InscripcionDTO claseId, Long miembroId) throws Exception{
+        Asistente asistente = new Asistente(miembroId,claseId.getClaseId(),new Date());
+        Optional<Clase> clase = claseRepository.findById(claseId.getClaseId());
 
-        // Verificar si el miembro existe en el servicio de miembros
-        Miembro miembro = webClient.get()
-                .uri("http://localhost:8083/miembros/{miembroId}", miembroId)
+        Miembro respuesta = webClient.get()
+                .uri("http://localhost:8083/api/miembro/get/{miembroId}", miembroId)
+                .headers(headers -> headers.setBearerAuth(claseId.getToken()))
                 .retrieve()
                 .bodyToMono(Miembro.class)
                 .block();
-
         if (miembro == null || !miembro.getId().equals(miembroId)) {
             throw new Exception("El miembro con ID " + miembroId + " no existe.");
         }
@@ -110,6 +106,14 @@ public class ClaseService {
         Clase clase = claseOpt.get();
         if (clase.getCapacidadMaxima() <= 0) {
             throw new Exception("No hay cupos disponibles para la clase " + clase.getNombre());
+        if(clase.isPresent() && clase.get().getCapacidadMaxima()!=0 && respuesta.getId().equals(miembroId)){
+            clase.get().setCapacidadMaxima(clase.get().getCapacidadMaxima()-1);
+            String idClase = clase.get().getId().toString();
+            int ocupacionActual = clase.get().getCapacidadMaxima();
+
+            ocupacionClaseProducer.actualizarOcupacion(idClase,ocupacionActual);
+            return asistenteRepository.save(asistente);
+
         }
 
         // Reducir capacidad disponible
