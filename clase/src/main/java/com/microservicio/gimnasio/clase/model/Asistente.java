@@ -11,22 +11,19 @@ import java.util.Date;
 @Entity
 @NoArgsConstructor
 @AllArgsConstructor
-
 public class Asistente {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     private Long miembroId;
-    private Long claseId;
-    private Date fechaInscripción;
-
+    private Date fechaInscripcion;  // renamed without accent for best practice
 
     public Asistente(Long miembroId, Long claseId, Date date) {
-
         this.miembroId = miembroId;
-        this.claseId = claseId;
-        fechaInscripción = date;
+        this.clase = clase;
+        this.fechaInscripcion = date;
     }
 
     public Asistente() {

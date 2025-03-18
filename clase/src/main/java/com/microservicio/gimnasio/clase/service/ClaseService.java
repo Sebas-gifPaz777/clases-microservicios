@@ -4,12 +4,11 @@ import com.microservicio.gimnasio.clase.model.*;
 import com.microservicio.gimnasio.clase.repository.AsistenteRepository;
 import com.microservicio.gimnasio.clase.repository.ClaseRepository;
 import jakarta.transaction.Transactional;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 
-import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Optional;
@@ -18,50 +17,78 @@ import java.util.Optional;
 public class ClaseService {
 
     @Autowired
-    ClaseRepository claseRepository;
+    private ClaseRepository claseRepository;
 
     @Autowired
-    WebClient webClient;
+    private AsistenteRepository asistenteRepository;
 
     @Autowired
-    AsistenteRepository asistenteRepository;
+    private WebClient webClient;
 
     @Autowired
+    private RabbitTemplate rabbitTemplate;
+
+    /**
+     * Programa una nueva clase en la base de datos y envía una notificación a RabbitMQ.
+     */
     OcupacionClaseProducer ocupacionClaseProducer;
-
-
+  
     public Clase programarClase(Clase clase) {
-        //clase.setAsistente(new ArrayList<>());
-       return claseRepository.save(clase);
+        Clase nuevaClase = claseRepository.save(clase);
+
+        // Enviar notificación a RabbitMQ sobre la nueva clase
+        String mensaje = "Nueva clase programada: " + clase.getNombre() + " el " + clase.getFecha();
+        rabbitTemplate.convertAndSend("clases.intercambio", "", mensaje);
+
+        return nuevaClase;
     }
-    public Clase agregarEntrenador(Long entrenadorId, Long id) {
-        Optional<Clase> clase = claseRepository.findById(id);
-        if(clase.isPresent()){
-            Entrenador entrenador = webClient.get()
-                    .uri("http://localhost:8082/entrenadores/{id}", id)
+
+    /**
+     * Asigna un entrenador a una clase consultando el servicio de entrenadores.
+     */
+    public Clase agregarEntrenador(Long entrenadorId, Long claseId) {
+        Optional<Clase> claseOpt = claseRepository.findById(claseId);
+        if (claseOpt.isEmpty()) {
+            return null; // Retorna null si la clase no existe
+        }
+
+        Clase clase = claseOpt.get();
+
+        // Consultar servicio de entrenadores
+        Entrenador entrenador = webClient.get()
+                .uri("http://localhost:8082/entrenadores/{id}", entrenadorId)
+                .retrieve()
+                .bodyToMono(Entrenador.class)
+                .block();
+
+        if (entrenador != null && entrenador.getDisponible()) {
+            clase.setEntrenadorId(entrenadorId);
+            entrenador.setDisponible(false);
+
+            // Actualizar disponibilidad del entrenador
+            webClient.put()
+                    .uri("http://localhost:8082/entrenadores/{id}", entrenadorId)
+                    .bodyValue(entrenador)
                     .retrieve()
                     .bodyToMono(Entrenador.class)
                     .block();
-            if(entrenador.getDisponible()){
-                clase.get().setEntrenadorId(id);
-                entrenador.setDisponible(false);
-                webClient.put()
-                        .uri("http://localhost:8082/entrenadores/{id}", id) // Pasar ID en la URL
-                        .bodyValue(entrenador) // Enviar el objeto en el cuerpo de la solicitud
-                        .retrieve()
-                        .bodyToMono(Entrenador.class) // Convertir la respuesta a un objeto Entrenador
-                        .block();
-            }
 
-            claseRepository.save(clase.get());
+            return claseRepository.save(clase);
         }
-            return null;
+        return null;
     }
 
+    /**
+     * Retorna todas las clases programadas.
+     */
     public List<Clase> obtenerTodasClases() {
         return claseRepository.findAll();
     }
 
+
+    /**
+     * Inscribe un miembro en una clase, reduce la capacidad disponible y envía un evento a RabbitMQ.
+     */
     public Asistente inscribirAsistente(InscripcionDTO claseId, Long miembroId) throws Exception{
         Asistente asistente = new Asistente(miembroId,claseId.getClaseId(),new Date());
         Optional<Clase> clase = claseRepository.findById(claseId.getClaseId());
@@ -72,7 +99,13 @@ public class ClaseService {
                 .retrieve()
                 .bodyToMono(Miembro.class)
                 .block();
+        if (miembro == null || !miembro.getId().equals(miembroId)) {
+            throw new Exception("El miembro con ID " + miembroId + " no existe.");
+        }
 
+        Clase clase = claseOpt.get();
+        if (clase.getCapacidadMaxima() <= 0) {
+            throw new Exception("No hay cupos disponibles para la clase " + clase.getNombre());
         if(clase.isPresent() && clase.get().getCapacidadMaxima()!=0 && respuesta.getId().equals(miembroId)){
             clase.get().setCapacidadMaxima(clase.get().getCapacidadMaxima()-1);
             String idClase = clase.get().getId().toString();
@@ -80,19 +113,33 @@ public class ClaseService {
 
             ocupacionClaseProducer.actualizarOcupacion(idClase,ocupacionActual);
             return asistenteRepository.save(asistente);
-        }
-        else
-            throw new Exception("No hay mas cupos");
 
+        }
+
+        // Reducir capacidad disponible
+        clase.setCapacidadMaxima(clase.getCapacidadMaxima() - 1);
+        claseRepository.save(clase);
+
+        // Crear y guardar el nuevo asistente de la clase
+        Asistente asistente = new Asistente(miembroId, clase, new Date());
+        Asistente nuevoAsistente = asistenteRepository.save(asistente);
+
+        // Enviar notificación a RabbitMQ sobre la inscripción
+        String mensaje = "El miembro " + miembro.getNombre() + " se inscribió en la clase " + clase.getNombre();
+        rabbitTemplate.convertAndSend("clases.intercambio", "", mensaje);
+
+        return nuevoAsistente;
     }
 
+    /**
+     * Actualiza el inventario de equipos consultando el servicio de equipos.
+     */
     public void escogerInventario(Long cantidad, Long inventarioId) {
         webClient.put()
-                .uri("http://localhost:8081/equipos/{inventarioId}/cantidad", inventarioId) // Pasar ID en la URL
-                .bodyValue(cantidad) // Enviar el objeto en el cuerpo de la solicitud
+                .uri("http://localhost:8081/equipos/{inventarioId}/cantidad", inventarioId)
+                .bodyValue(cantidad)
                 .retrieve()
-                .bodyToMono(Entrenador.class) // Convertir la respuesta a un objeto Entrenador
+                .bodyToMono(Void.class)
                 .block();
-
     }
 }
