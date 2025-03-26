@@ -74,9 +74,6 @@ public class ClaseController {
         }
     }
 
-    @GetMapping("/procesar-resumen")
-    public resumenConsumerProcesar(){
-        return ResponseEntity.ok(resumenConsumer.procesarResumen());
-    }
+    
 
 }
