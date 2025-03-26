@@ -11,7 +11,6 @@ import java.util.List;
 
 @Data
 @Entity
-@NoArgsConstructor
 public class Clase {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

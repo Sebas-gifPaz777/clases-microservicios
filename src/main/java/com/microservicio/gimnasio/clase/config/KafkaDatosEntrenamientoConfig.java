@@ -1,7 +1,6 @@
 package com.microservicio.gimnasio.clase.config;
 
 import com.microservicio.gimnasio.clase.dto.DatosEntrenamiento;
-import com.microservicio.gimnasio.clase.dto.OcupacionClase;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.context.annotation.Bean;
@@ -15,10 +14,10 @@ import java.util.HashMap;
 import java.util.Map;
 
 @Configuration
-public class KafkaConfig {
+public class KafkaDatosEntrenamientoConfig {
 
     @Bean
-    public ProducerFactory<String, DatosEntrenamiento> datosEntrenamientoProducerFactory() {
+    public ProducerFactory<String, DatosEntrenamiento> datosProducerFactory() {
         Map<String, Object> configProps = new HashMap<>();
         configProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:29092");
         configProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
@@ -27,21 +26,7 @@ public class KafkaConfig {
     }
 
     @Bean
-    public KafkaTemplate<String, DatosEntrenamiento> datosEntrenamientoKafkaTemplate() {
-        return new KafkaTemplate<>(datosEntrenamientoProducerFactory());
-    }
-
-    @Bean
-    public ProducerFactory<String, OcupacionClase> ocupacionClaseProducerFactory() {
-        Map<String, Object> configProps = new HashMap<>();
-        configProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:29092");
-        configProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-        configProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, JsonSerializer.class);
-        return new DefaultKafkaProducerFactory<>(configProps);
-    }
-
-    @Bean
-    public KafkaTemplate<String, OcupacionClase> ocupacionClaseKafkaTemplate() {
-        return new KafkaTemplate<>(ocupacionClaseProducerFactory());
+    public KafkaTemplate<String, DatosEntrenamiento> datosKafkaTemplate(ProducerFactory<String, DatosEntrenamiento> datosProducerFactory) {
+        return new KafkaTemplate<>(datosProducerFactory);
     }
 }

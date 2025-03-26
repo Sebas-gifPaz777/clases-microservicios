@@ -9,7 +9,7 @@ import java.util.Date;
 
 @Data
 @Entity
-@NoArgsConstructor
+
 @AllArgsConstructor
 
 public class Asistente {

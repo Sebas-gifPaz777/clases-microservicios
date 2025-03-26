@@ -4,6 +4,8 @@ import com.microservicio.gimnasio.clase.model.Asistente;
 import com.microservicio.gimnasio.clase.model.Clase;
 import com.microservicio.gimnasio.clase.model.InscripcionDTO;
 import com.microservicio.gimnasio.clase.service.ClaseService;
+import com.microservicio.gimnasio.clase.service.EventoEntrenamientoService;
+import com.microservicio.gimnasio.clase.service.ResumenEntrenamientoConsumer;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -18,6 +20,12 @@ public class ClaseController {
 
     @Autowired
     ClaseService claseService;
+
+    @Autowired
+    private EventoEntrenamientoService eventoEntrenamientoService;
+
+    @Autowired
+    private ResumenEntrenamientoConsumer resumenConsumer;
 
     @PostMapping("/programar")
     public ResponseEntity<?> programarClase(@RequestBody Clase clase) {
@@ -54,4 +62,21 @@ public class ClaseController {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
         }
     }
+
+    // Endpoint de prueba para publicar datos de entrenamiento
+    @PostMapping("/datos-entrenamiento")
+    public ResponseEntity<?> testDatosEntrenamiento(@RequestParam Long claseId, @RequestParam int cantidadAsistentes) {
+        try {
+            eventoEntrenamientoService.publicarDatosEntrenamiento(claseId, cantidadAsistentes);
+            return ResponseEntity.ok("Mensaje de datos de entrenamiento enviado correctamente.");
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error al enviar mensaje: " + e.getMessage());
+        }
+    }
+
+    @GetMapping("/procesar-resumen")
+    public resumenConsumerProcesar(){
+        return ResponseEntity.ok(resumenConsumer.procesarResumen());
+    }
+
 }
